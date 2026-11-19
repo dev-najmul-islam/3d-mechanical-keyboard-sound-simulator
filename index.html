@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Mechanical Keyboard Customizer & ASMR Switch Studio - Three.js</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; background: #070a12; overflow: hidden; font-family: 'Inter', sans-serif; }
+        #kbCanvas { width: 100%; height: 100%; cursor: grab; touch-action: none; }
+    </style>
+</head>
+<body class="h-screen text-white flex flex-col select-none">
+
+    <!-- Top Studio Header -->
+    <header class="h-14 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 flex items-center justify-between z-20">
+        <div class="flex items-center gap-3">
+            <span class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-lg shadow-lg">⌨️</span>
+            <div>
+                <h1 class="font-bold text-sm sm:text-base text-white">3D Custom Mechanical Keyboard & ASMR Switch Lab</h1>
+                <p class="text-[10px] text-cyan-400 font-mono">Three.js 65% Gasket Mount • Real-Time WebAudio Switch Synth</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3 text-xs font-mono">
+            <span id="lastKeyBadge" class="px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300">PRESS ANY KEY</span>
+        </div>
+    </header>
+
+    <div class="flex-1 flex flex-col md:flex-row relative overflow-hidden">
+        <!-- 3D Viewport -->
+        <div class="flex-1 relative min-h-[280px] md:min-h-0">
+            <canvas id="kbCanvas"></canvas>
+            <div class="absolute bottom-4 left-4 bg-slate-900/85 backdrop-blur-md border border-slate-800 px-3.5 py-1.5 rounded-2xl text-[11px] sm:text-xs text-slate-300 pointer-events-none">
+                ⌨️ Tap / Click 3D keycaps • Drag to orbit 360°
+            </div>
+        </div>
+
+        <!-- Customizer Sidebar -->
+        <div class="w-full md:w-80 bg-slate-900/95 border-t md:border-t-0 md:border-l border-slate-800 p-4 sm:p-5 space-y-5 z-20 overflow-y-auto max-h-[45vh] md:max-h-none">
+            <div>
+                <label class="text-xs font-bold uppercase tracking-wider text-cyan-400 block mb-2.5">🔊 Mechanical Switch Type (ASMR)</label>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="setSwitch('thocky')" id="sw-thocky" class="py-2 px-3 rounded-xl bg-cyan-500 text-slate-950 font-bold text-xs transition">Holy Panda (Thock)</button>
+                    <button onclick="setSwitch('clicky')" id="sw-clicky" class="py-2 px-3 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs transition">Cherry MX Blue</button>
+                    <button onclick="setSwitch('tactile')" id="sw-tactile" class="py-2 px-3 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs transition">MX Brown Tactile</button>
+                    <button onclick="setSwitch('linear')" id="sw-linear" class="py-2 px-3 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs transition">MX Red Linear</button>
+                </div>
+            </div>
+
+            <div>
+                <label class="text-xs font-bold uppercase tracking-wider text-amber-400 block mb-2.5">🎨 Keycap Set Colorway</label>
+                <div class="grid grid-cols-3 gap-2">
+                    <button onclick="setKeyway('cyber')" class="py-2 rounded-xl bg-slate-800 border border-cyan-500/40 text-cyan-300 text-xs font-bold">Cyber</button>
+                    <button onclick="setKeyway('botanical')" class="py-2 rounded-xl bg-slate-800 border border-emerald-500/40 text-emerald-300 text-xs font-bold">Matcha</button>
+                    <button onclick="setKeyway('retro')" class="py-2 rounded-xl bg-slate-800 border border-amber-500/40 text-amber-300 text-xs font-bold">Retro 9009</button>
+                </div>
+            </div>
+
+            <div>
+                <label class="text-xs font-bold uppercase tracking-wider text-purple-400 block mb-2.5">💡 RGB Backlight Plate</label>
+                <div class="grid grid-cols-3 gap-2">
+                    <button onclick="setRgb(0x22d3ee)" class="py-2 rounded-xl bg-cyan-500/20 text-cyan-300 text-xs font-bold">Cyan</button>
+                    <button onclick="setRgb(0xf43f5e)" class="py-2 rounded-xl bg-rose-500/20 text-rose-300 text-xs font-bold">Sunset</button>
+                    <button onclick="setRgb(0xa855f7)" class="py-2 rounded-xl bg-purple-500/20 text-purple-300 text-xs font-bold">Plasma</button>
+                </div>
+            </div>
+
+            <button onclick="triggerWaveDemo()" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 text-slate-950 font-bold text-xs shadow-lg">
+                ⚡ Trigger ASMR Typing Ripple Demo
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let switchProfile = 'thocky';
+        let audioCtx = null;
+
+        function playSwitchSound(type) {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+
+                if (type === 'thocky') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(170, now);
+                    osc.frequency.exponentialRampToValueAtTime(48, now + 0.065);
+                    gain.gain.setValueAtTime(0.32, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+                } else if (type === 'clicky') {
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(1400, now);
+                    osc.frequency.exponentialRampToValueAtTime(220, now + 0.045);
+                    gain.gain.setValueAtTime(0.18, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+                } else if (type === 'tactile') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(320, now);
+                    osc.frequency.exponentialRampToValueAtTime(85, now + 0.055);
+                    gain.gain.setValueAtTime(0.24, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+                } else {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(230, now);
+                    osc.frequency.exponentialRampToValueAtTime(70, now + 0.045);
+                    gain.gain.setValueAtTime(0.20, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+                }
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.075);
+            } catch (e) {}
+        }
+
+        function setSwitch(prof) {
+            switchProfile = prof;
+            playSwitchSound(prof);
+            ['thocky','clicky','tactile','linear'].forEach(k => {
+                const el = document.getElementById('sw-' + k);
+                if (el) el.className = k === prof
+                    ? 'py-2 px-3 rounded-xl bg-cyan-500 text-slate-950 font-bold text-xs transition'
+                    : 'py-2 px-3 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs transition';
+            });
+        }
+
+        const canvas = document.getElementById('kbCanvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x070a12);
+
+        const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+        camera.position.set(0, 8.2, 8.8);
+        camera.lookAt(0, 0, 0);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+        dirLight.position.set(5, 12, 7);
+        scene.add(dirLight);
+
+        const rgbLight = new THREE.PointLight(0x22d3ee, 2.2, 18);
+        rgbLight.position.set(0, 0.6, 0);
+        scene.add(rgbLight);
+
+        const kbGroup = new THREE.Group();
+        scene.add(kbGroup);
+
+        // Anodized Aluminum Case
+        const caseMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.75, roughness: 0.28 });
+        const baseMesh = new THREE.Mesh(new THREE.BoxGeometry(10.8, 0.65, 4.2), caseMat);
+        baseMesh.position.y = -0.35;
+        kbGroup.add(baseMesh);
+
+        // Glowing RGB Diffuser Plate
+        const plateMat = new THREE.MeshBasicMaterial({ color: 0x22d3ee });
+        const plateMesh = new THREE.Mesh(new THREE.PlaneGeometry(10.2, 3.7), plateMat);
+        plateMesh.rotation.x = -Math.PI / 2;
+        plateMesh.position.y = -0.01;
+        kbGroup.add(plateMesh);
+
+        // Build 5 Rows of 3D Keycaps
+        const rows = [
+            ['Escape','1','2','3','4','5','6','7','8','9','0','-','=','Backspace'],
+            ['Tab','Q','W','E','R','T','Y','U','I','O','P','[',']','\\'],
+            ['CapsLock','A','S','D','F','G','H','J','K','L',';','\'','Enter'],
+            ['Shift','Z','X','C','V','B','N','M',',','.','/','ArrowUp'],
+            ['Control','Alt','Space','ArrowLeft','ArrowDown','ArrowRight']
+        ];
+
+        const alphaMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.35, metalness: 0.15 });
+        const modMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.35, metalness: 0.2 });
+        const accentMat = new THREE.MeshStandardMaterial({ color: 0xf43f5e, roughness: 0.3, metalness: 0.2 });
+
+        const keyMeshes = [];
+        const keyMap = {};
+
+        rows.forEach((row, rIdx) => {
+            let xCursor = -4.7;
+            const zPos = -1.45 + rIdx * 0.72;
+            row.forEach((code) => {
+                let width = 0.62;
+                if (code === 'Backspace' || code === 'Tab' || code === 'CapsLock') width = 1.05;
+                if (code === 'Enter' || code === 'Shift') width = 1.32;
+                if (code === 'Space') width = 3.85;
+
+                const isAccent = (code === 'Escape' || code === 'Enter' || code === 'Space');
+                const isMod = width > 0.7 || code.startsWith('Arrow') || code === 'Control' || code === 'Alt';
+
+                const geo = new THREE.BoxGeometry(width, 0.38, 0.62);
+                const mesh = new THREE.Mesh(geo, isAccent ? accentMat : (isMod ? modMat : alphaMat));
+                mesh.position.set(xCursor + width / 2, 0.22, zPos);
+                mesh.userData = { code: code.toUpperCase(), restY: 0.22 };
+                kbGroup.add(mesh);
+                keyMeshes.push(mesh);
+                keyMap[code.toUpperCase()] = mesh;
+
+                xCursor += width + 0.08;
+            });
+        });
+
+        function press3DKey(mesh, label) {
+            if (!mesh) return;
+            mesh.position.y = 0.07;
+            playSwitchSound(switchProfile);
+            document.getElementById('lastKeyBadge').textContent = 'KEY: ' + label;
+        }
+
+        window.addEventListener('keydown', (e) => {
+            const k = e.key === ' ' ? 'SPACE' : e.key.toUpperCase();
+            const m = keyMap[k] || keyMeshes[Math.floor(Math.random() * keyMeshes.length)];
+            press3DKey(m, k);
+        });
+
+        function triggerWaveDemo() {
+            keyMeshes.forEach((m, idx) => {
+                setTimeout(() => press3DKey(m, m.userData.code), idx * 24);
+            });
+        }
+
+        function setKeyway(theme) {
+            if (theme === 'cyber') {
+                alphaMat.color.setHex(0x1e293b);
+                modMat.color.setHex(0x06b6d4);
+                accentMat.color.setHex(0xf43f5e);
+            } else if (theme === 'botanical') {
+                alphaMat.color.setHex(0xecfdf5);
+                modMat.color.setHex(0x059669);
+                accentMat.color.setHex(0x064e3b);
+            } else {
+                alphaMat.color.setHex(0xe2e8f0);
+                modMat.color.setHex(0x94a3b8);
+                accentMat.color.setHex(0xd97706);
+            }
+        }
+
+        function setRgb(hex) {
+            rgbLight.color.setHex(hex);
+            plateMat.color.setHex(hex);
+        }
+
+        let isDragging = false, prevX = 0, prevY = 0;
+        canvas.addEventListener('pointerdown', (e) => {
+            isDragging = true; prevX = e.clientX; prevY = e.clientY;
+            const randomMesh = keyMeshes[Math.floor(Math.random() * keyMeshes.length)];
+            press3DKey(randomMesh, randomMesh.userData.code);
+        });
+        window.addEventListener('pointermove', (e) => {
+            if (!isDragging) return;
+            kbGroup.rotation.y += (e.clientX - prevX) * 0.008;
+            kbGroup.rotation.x = Math.max(-0.5, Math.min(0.6, kbGroup.rotation.x + (e.clientY - prevY) * 0.008));
+            prevX = e.clientX; prevY = e.clientY;
+        });
+        window.addEventListener('pointerup', () => isDragging = false);
+
+        function resize() {
+            const w = canvas.parentElement.clientWidth;
+            const h = canvas.parentElement.clientHeight;
+            renderer.setSize(w, h);
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            keyMeshes.forEach(m => {
+                m.position.y += (m.userData.restY - m.position.y) * 0.22;
+            });
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
